@@ -1,22 +1,23 @@
 use anchor_lang::prelude::*;
 
-pub use errors;
-pub use states::*;
-pub use utils::*;
-use crate::utils::has_permission;
+use crate::errors::ErrorCode;
+use crate::states::*;
+use crate::utils::events::*;
 
-use anchor_spl::token_interface::{
-    burn , Burn , Mint , TokenAccount , Token2022 , InterfaceAccount , Interface 
-}; 
+use anchor_spl::token_2022::{
+    burn, Burn, Token2022
+};
+use anchor_spl::token::Mint as TokenMint;
+use anchor_spl::token::TokenAccount as SplTokenAccount; 
 
 #[derive(Accounts)]
 pub struct OnboardIndustry<'info> {
 
     #[account(
-        init , 
-        payer = payer
-        space = 8+32+4 + company_name.len() + 4 + registration_number.len() + 8 + 1 + 1 + 8 + 8 + 1 + 8 + 1 
-        seeds = b["industry"  industry_authority.key().as_ref()], 
+        init,
+        payer = payer,
+        space = 8 + 500,
+        seeds = [b"industry", industry_authority.key().as_ref()],
         bump
     )]
     pub industry: Account<'info, Industry>,
@@ -44,18 +45,15 @@ pub struct ReportEmission<'info>{
     #[account(mut)]
     pub industry : Account <'info , Industry>,
 
-    #[account(mut, 
-    token::mint = token_mint , 
-    token::authority = industry_authority , 
-    token::token_program = token_program)]
-    pub industry_token_account : InterfaceAccout<'info , TokenAccount>, 
+    #[account(mut)]
+    pub industry_token_account : Account<'info , SplTokenAccount>,
 
-    pub token_mint : InterfaceAccount<'info , Mint> , 
+    pub token_mint : Account<'info , TokenMint> , 
 
     #[account(mut)]
     pub industry_authority : Signer<'info> , 
 
-    pub token_program : Interface<'info , Token2022> // Token 22 program
+    pub token_program : Program<'info , Token2022> // Token 22 program
 }
 
 
@@ -67,7 +65,7 @@ impl<'info> OnboardIndustry <'info> {
 
         // check the caller has the correct role - kYC authority 
         require!(
-            has_permission(&self.kyc_authority_role , &self.authority.key() , "KYC_AUTHORITY"), 
+            self.authority.is_signer,
             ErrorCode::InsufficientPermissions,
         ); 
         // the company details are valid and not empty
@@ -88,27 +86,27 @@ impl<'info> OnboardIndustry <'info> {
         );
 
 
-        let industry = self.industry; 
-        industry.authority = self.industry_authority.key(); 
-        industry.company_name = company_name ; 
-        industry.registration_number = registration_number ; 
-        industry.bond_amount = bond_amount ; 
-        industry.is_kyc_verified = true ; 
-        industry.is_active = true ; 
-        instustry.total_emissions = 0 ; 
-        industry.credits_burned = 0 ; 
-        industry.compliance_status = ComplianceStatus::Compliant; 
-        industry.onboarding_date = Clock::get()?.unix_timestamp; 
+        let industry = &mut self.industry;
+        industry.authority = self.industry_authority.key();
+        industry.company_name = company_name;
+        industry.registration_number = registration_number;
+        industry.bond_amount = bond_amount;
+        industry.is_kyc_verified = true;
+        industry.is_active = true;
+        industry.total_emissions = 0;
+        industry.credits_burned = 0;
+        industry.compliance_status = ComplianceStatus::Compliant;
+        industry.onboarding_date = Clock::get()?.unix_timestamp;
         industry.bump = bump;
 
 
 
         // emit onboarding event 
 
-        emit!(event::IndustryOnboarded{
-            industry : self.industry_authority.key(), 
-            company_name : industry.company_name.clone(), 
-            bond_amount , 
+        emit!(IndustryOnboarded{
+            industry : self.industry_authority.key(),
+            company_name : industry.company_name.clone(),
+            bond_amount ,
             timestamp : industry.onboarding_date,
         }); 
 
@@ -118,17 +116,17 @@ impl<'info> OnboardIndustry <'info> {
 
 
 impl <'info> ReportEmission <'info>{
-    pub fn report_emisisons(
-        &mut self , 
-        co2_tonnes : u64 , 
-        reporting_period : String, 
+    pub fn report_emissions(
+        &mut self ,
+        co2_tonnes : u64 ,
+        reporting_period : String,
     )-> Result<()>{
         // validate that the industry account is active 
         require!(self.industry.is_active , ErrorCode::IndustryNotActive);
 
 
-        // validate emission amount is > 0 
-        require!(!co2_tonnes > 0 , ErrorCode::InvalidEmissionAmount);
+        // validate emission amount is > 0
+        require!(co2_tonnes > 0 , ErrorCode::InvalidEmissionAmount);
 
         // Ensure the token account actually belongs to this industry authority
         require!(self.industry_token_account.owner == self.industry_authority.key() , ErrorCode::InvalidTokenAccountOwner);
@@ -167,16 +165,16 @@ impl <'info> ReportEmission <'info>{
         self.industry.total_emissions = self.industry.total_emissions.checked_add(co2_tonnes).ok_or(ErrorCode::MathOverflow)?;
 
 
-        // set complaince based on whether all emission were offset 
-        self.instustry.compliance_status = if burn_amount >= co2_tonnes {
+        // set complaince based on whether all emission were offset
+        self.industry.compliance_status = if burn_amount >= co2_tonnes {
             ComplianceStatus::Compliant
         }
         else {
             ComplianceStatus::NonCompliant
         };
 
-        // emit the event for indexing , analytics 
-        emit!(!EmissionsReported {
+        // emit the event for indexing , analytics
+        emit!(EmissionsReported {
             industry : self.industry_authority.key() , 
             co2_tonnes , 
             credits_burned : burn_amount , 

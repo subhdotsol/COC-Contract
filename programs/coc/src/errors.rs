@@ -17,7 +17,11 @@ pub enum ErrorCode {
     #[msg("Bond amount is invalid")]
     InvalidBondAmount,
     #[msg("Company name is invalid")]
-    InvalidBondAmount,
+    InvalidCompanyName,
+    #[msg("Company name is invalid")]
+    InvalidCompany,
+    #[msg("Registration number is invalid")]
+    InvalidRegistrationNumber,
     #[msg("System program is invalid")]
     InvalidSystemProgram,
 
@@ -35,12 +39,12 @@ pub enum ErrorCode {
     InsufficientPermissions,
     #[msg("Token is not active")]
     TokenNotActive,
-    #[msg("Industry is not active")]
-    IndustryNotActive,
     #[msg("Auction is not active")]
     AuctionNotActive,
     #[msg("Auction has expired")]
     AuctionExpired,
     #[msg("Insufficient tokens available in auction")]
     InsufficientTokensAvailable,
+    #[msg("Math operation overflow")]
+    MathOverflow,
 }
